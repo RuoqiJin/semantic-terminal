@@ -151,7 +151,6 @@ mod tests {
     fn test_parse_braille_spinner_title() {
         let parser = ClaudeCodeTitleParser::new();
 
-        // Test with braille spinner
         let context = make_context("⠐ Initial Greeting");
         let result = parser.parse(&context);
         assert!(result.is_some());
@@ -183,21 +182,19 @@ mod tests {
     fn test_parse_static_spinner_title() {
         let parser = ClaudeCodeTitleParser::new();
 
-        // Test with ✳ spinner (static/idle)
         let context = make_context("✳ Claude Code");
         let result = parser.parse(&context);
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.data.task_name, Some("Claude Code".to_string()));
         assert_eq!(result.data.spinner_state, "✳");
-        assert!(!result.data.is_processing); // ✳ is not processing
+        assert!(!result.data.is_processing);
     }
 
     #[test]
     fn test_parse_other_spinners() {
         let parser = ClaudeCodeTitleParser::new();
 
-        // Test other spinners (should indicate processing except ✳)
         for &spinner in OTHER_SPINNERS {
             let title = format!("{} Some task", spinner);
             let context = make_context(&title);
@@ -222,7 +219,6 @@ mod tests {
     fn test_parse_static_title() {
         let parser = ClaudeCodeTitleParser::new();
 
-        // Test with plain title (no spinner)
         let context = make_context("Claude Code");
         let result = parser.parse(&context);
         assert!(result.is_some());
@@ -230,7 +226,7 @@ mod tests {
         assert_eq!(result.data.task_name, Some("Claude Code".to_string()));
         assert_eq!(result.data.spinner_state, "");
         assert!(!result.data.is_processing);
-        assert!(result.confidence < 0.9); // Lower confidence for static titles
+        assert!(result.confidence < 0.9);
     }
 
     #[test]
@@ -246,7 +242,6 @@ mod tests {
     fn test_parse_spinner_only() {
         let parser = ClaudeCodeTitleParser::new();
 
-        // Test with spinner but no task name
         let context = make_context("⠐ ");
         let result = parser.parse(&context);
         assert!(result.is_some());
@@ -275,7 +270,6 @@ mod tests {
 
     #[test]
     fn test_all_spinners_constant() {
-        // Verify ALL_SPINNERS contains all expected characters
         assert_eq!(BRAILLE_SPINNERS.len(), 12);
         assert_eq!(OTHER_SPINNERS.len(), 6);
         assert_eq!(ALL_SPINNERS.len(), 18);

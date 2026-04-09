@@ -2,35 +2,16 @@
 //!
 //! Parses tool call boxes (tool name, parameters, output) from Claude Code CLI output.
 
-use once_cell::sync::Lazy;
-use regex::Regex;
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use super::patterns::CompiledPatterns;
 use super::types::{
     ClaudeCodeToolOutput, ParserContext, ParserMeta, ToolOutputParser, ToolOutputResult,
     ToolStatus,
 };
 
-/// Tool header patterns:
-/// - Box style: "⏺ Bash" or "⏺ Bash (completed in 0.5s)"
-static TOOL_HEADER_BOX_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^⏺\s+(\w+)(?:\s+\(completed\s+in\s+([\d.]+)s?\))?$").unwrap());
-
-/// Tool header inline style: "⏺ Bash(git status)" or "⏺ Search(pattern: \"*.ts\")"
-static TOOL_HEADER_INLINE_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^⏺\s+(\w+)\((.*)\)$").unwrap());
-
-/// Tool parameter line pattern: │ key: value
-/// Example: "  │ command: \"git status\""
-/// Example: "  │ file_path: \"/path/to/file\""
-static PARAM_LINE_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*│\s*(\w+):\s*(.+)$").unwrap());
-
-/// Inline tool output lines often start with ⎿
-static INLINE_OUTPUT_LINE_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*⎿\s*(.+)$").unwrap());
-
-/// Known tool names
+/// Legacy known tool names (kept for external consumers like napi crate)
 pub const KNOWN_TOOLS: &[&str] = &[
     "Bash",
     "Read",
@@ -58,15 +39,9 @@ enum ToolStyle {
 }
 
 /// Claude Code tool output parser
-///
-/// Parses tool call boxes from Claude Code CLI output, extracting:
-/// - Tool name
-/// - Parameters
-/// - Output content
-/// - Duration (if completed)
-/// - Status (running/completed)
 pub struct ClaudeCodeToolOutputParser {
     meta: ParserMeta,
+    patterns: Arc<CompiledPatterns>,
 }
 
 impl Default for ClaudeCodeToolOutputParser {
@@ -76,8 +51,8 @@ impl Default for ClaudeCodeToolOutputParser {
 }
 
 impl ClaudeCodeToolOutputParser {
-    /// Create a new Claude Code tool output parser
-    pub fn new() -> Self {
+    /// Create with external patterns
+    pub fn with_patterns(patterns: Arc<CompiledPatterns>) -> Self {
         Self {
             meta: ParserMeta {
                 name: "claude-code-tool".to_string(),
@@ -85,7 +60,17 @@ impl ClaudeCodeToolOutputParser {
                 priority: 92,
                 version: "1.0.0".to_string(),
             },
+            patterns,
         }
+    }
+
+    /// Create with default embedded patterns
+    pub fn new() -> Self {
+        let patterns = Arc::new(
+            super::patterns::default_compiled(crate::CliEngine::ClaudeCode)
+                .expect("embedded claude-code patterns must parse"),
+        );
+        Self::with_patterns(patterns)
     }
 
     /// Parse inline arguments like "git status" or "pattern: \"*.ts\", path: \"/src\""
@@ -99,14 +84,12 @@ impl ClaudeCodeToolOutputParser {
             return HashMap::new();
         }
 
-        // Bash(...) is usually a raw command string
         if tool_name == "Bash" {
             let mut params = HashMap::new();
             params.insert("command".to_string(), serde_json::Value::String(trimmed.to_string()));
             return params;
         }
 
-        // If it looks like key: value pairs, parse loosely
         if trimmed.contains(':') {
             let parts = self.split_args(trimmed);
             let mut out = HashMap::new();
@@ -120,12 +103,10 @@ impl ClaudeCodeToolOutputParser {
                         continue;
                     }
 
-                    // Try to parse as JSON, fallback to string
                     let value = if let Ok(v) = serde_json::from_str::<serde_json::Value>(value_raw)
                     {
                         v
                     } else {
-                        // Remove surrounding quotes if present
                         let cleaned = if value_raw.starts_with('"') && value_raw.ends_with('"') {
                             &value_raw[1..value_raw.len() - 1]
                         } else {
@@ -143,7 +124,6 @@ impl ClaudeCodeToolOutputParser {
             }
         }
 
-        // Fallback: store as 'args'
         let mut params = HashMap::new();
         params.insert("args".to_string(), serde_json::Value::String(trimmed.to_string()));
         params
@@ -190,7 +170,7 @@ impl ClaudeCodeToolOutputParser {
 
     /// Check if a tool name is known
     fn is_known_tool(&self, name: &str) -> bool {
-        KNOWN_TOOLS.contains(&name)
+        self.patterns.is_known_tool(name)
     }
 }
 
@@ -200,16 +180,23 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
     }
 
     fn can_parse(&self, context: &ParserContext) -> bool {
-        // Check if any line matches tool header pattern
+        let header_box_re = self.patterns.regex("tool_output.header_box");
+        let header_inline_re = self.patterns.regex("tool_output.header_inline");
+        let output_line_re = self.patterns.regex("tool_output.output_line");
         context.last_lines.iter().any(|line| {
             let trimmed = line.trim();
-            TOOL_HEADER_BOX_PATTERN.is_match(trimmed)
-                || TOOL_HEADER_INLINE_PATTERN.is_match(trimmed)
-                || INLINE_OUTPUT_LINE_PATTERN.is_match(trimmed)
+            header_box_re.map_or(false, |re| re.is_match(trimmed))
+                || header_inline_re.map_or(false, |re| re.is_match(trimmed))
+                || output_line_re.map_or(false, |re| re.is_match(trimmed))
         })
     }
 
     fn parse(&self, context: &ParserContext) -> Option<ToolOutputResult> {
+        let header_box_re = self.patterns.regex("tool_output.header_box");
+        let header_inline_re = self.patterns.regex("tool_output.header_inline");
+        let param_line_re = self.patterns.regex("tool_output.param_line");
+        let output_line_re = self.patterns.regex("tool_output.output_line");
+
         let lines = &context.last_lines;
         let mut tool_name: Option<String> = None;
         let mut duration_ms: Option<f64> = None;
@@ -222,11 +209,9 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
         for line in lines {
             let trimmed = line.trim();
 
-            // Check for box-style tool header
-            if let Some(caps) = TOOL_HEADER_BOX_PATTERN.captures(trimmed) {
+            if let Some(caps) = header_box_re.and_then(|re| re.captures(trimmed)) {
                 tool_name = Some(caps.get(1).unwrap().as_str().to_string());
                 if let Some(duration_match) = caps.get(2) {
-                    // Convert seconds to milliseconds
                     if let Ok(secs) = duration_match.as_str().parse::<f64>() {
                         duration_ms = Some(secs * 1000.0);
                     }
@@ -237,8 +222,7 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
                 continue;
             }
 
-            // Check for inline-style tool header
-            if let Some(caps) = TOOL_HEADER_INLINE_PATTERN.captures(trimmed) {
+            if let Some(caps) = header_inline_re.and_then(|re| re.captures(trimmed)) {
                 let name = caps.get(1).unwrap().as_str();
                 tool_name = Some(name.to_string());
                 let arg_string = caps.get(2).map(|m| m.as_str()).unwrap_or("");
@@ -252,18 +236,15 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
             if in_tool_block {
                 match tool_style {
                     Some(ToolStyle::Box) => {
-                        // Check for parameter line
-                        if let Some(caps) = PARAM_LINE_PATTERN.captures(trimmed) {
+                        if let Some(caps) = param_line_re.and_then(|re| re.captures(trimmed)) {
                             let key = caps.get(1).unwrap().as_str();
                             let value_raw = caps.get(2).unwrap().as_str();
 
-                            // Try to parse JSON value, fallback to string
                             let value =
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(value_raw)
                                 {
                                     v
                                 } else {
-                                    // Remove surrounding quotes if present
                                     let cleaned =
                                         if value_raw.starts_with('"') && value_raw.ends_with('"') {
                                             &value_raw[1..value_raw.len() - 1]
@@ -278,24 +259,23 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
                             continue;
                         }
 
-                        // Check for output content (lines starting with │ but not key: value)
-                        if trimmed.starts_with('│') {
-                            let content = trimmed[3..].trim(); // Skip "│ "
-                            if !content.is_empty() && !PARAM_LINE_PATTERN.is_match(trimmed) {
+                        if let Some(rest) = trimmed.strip_prefix('│') {
+                            let content = rest.trim();
+                            if !content.is_empty()
+                                && !param_line_re.map_or(false, |re| re.is_match(trimmed))
+                            {
                                 output_lines.push(content.to_string());
                                 raw_lines.push(line.clone());
                             }
                             continue;
                         }
 
-                        // End of tool block
                         if !trimmed.is_empty() && !trimmed.starts_with('│') {
                             break;
                         }
                     }
                     Some(ToolStyle::Inline) => {
-                        // Check for inline output line
-                        if let Some(caps) = INLINE_OUTPUT_LINE_PATTERN.captures(trimmed) {
+                        if let Some(caps) = output_line_re.and_then(|re| re.captures(trimmed)) {
                             let content = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("");
                             if !content.is_empty() {
                                 output_lines.push(content.to_string());
@@ -304,7 +284,6 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
                             continue;
                         }
 
-                        // Continuation lines (indented), keep as plain text output
                         if line.starts_with("  ")
                             && !trimmed.starts_with('⏺')
                             && !trimmed.starts_with('❯')
@@ -315,8 +294,9 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
                             continue;
                         }
 
-                        // End of tool block
-                        if !trimmed.is_empty() && !INLINE_OUTPUT_LINE_PATTERN.is_match(trimmed) {
+                        if !trimmed.is_empty()
+                            && !output_line_re.map_or(false, |re| re.is_match(trimmed))
+                        {
                             break;
                         }
                     }
@@ -327,7 +307,6 @@ impl ToolOutputParser for ClaudeCodeToolOutputParser {
 
         let tool_name = tool_name?;
 
-        // Determine status
         let status = if duration_ms.is_some() {
             ToolStatus::Completed
         } else {
@@ -373,7 +352,6 @@ mod tests {
     #[test]
     fn test_can_parse_box_header() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash", "  │ command: \"git status\""]);
         assert!(parser.can_parse(&context));
     }
@@ -381,7 +359,6 @@ mod tests {
     #[test]
     fn test_can_parse_inline_header() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash(git status)"]);
         assert!(parser.can_parse(&context));
     }
@@ -389,7 +366,6 @@ mod tests {
     #[test]
     fn test_can_parse_completed_header() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash (completed in 0.5s)"]);
         assert!(parser.can_parse(&context));
     }
@@ -397,7 +373,6 @@ mod tests {
     #[test]
     fn test_cannot_parse_random_text() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["random text", "nothing special"]);
         assert!(!parser.can_parse(&context));
     }
@@ -405,7 +380,6 @@ mod tests {
     #[test]
     fn test_parse_box_style_basic() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash", "  │ command: \"git status\""]);
         let result = parser.parse(&context);
 
@@ -424,7 +398,6 @@ mod tests {
     #[test]
     fn test_parse_box_style_completed() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash (completed in 0.5s)", "  │ command: \"ls -la\""]);
         let result = parser.parse(&context);
 
@@ -438,7 +411,6 @@ mod tests {
     #[test]
     fn test_parse_inline_style_bash() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash(git status)"]);
         let result = parser.parse(&context);
 
@@ -454,7 +426,6 @@ mod tests {
     #[test]
     fn test_parse_inline_style_with_key_value() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Search(pattern: \"*.ts\", path: \"/src\")"]);
         let result = parser.parse(&context);
 
@@ -474,7 +445,6 @@ mod tests {
     #[test]
     fn test_parse_with_output() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&[
             "⏺ Bash(git status)",
             "  ⎿ On branch main",
@@ -494,20 +464,18 @@ mod tests {
     #[test]
     fn test_parse_unknown_tool() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ UnknownTool(some args)"]);
         let result = parser.parse(&context);
 
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.data.tool_name, "UnknownTool");
-        assert_eq!(result.confidence, 0.8); // Lower confidence for unknown tools
+        assert_eq!(result.confidence, 0.8);
     }
 
     #[test]
     fn test_parse_read_tool() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&[
             "⏺ Read",
             "  │ file_path: \"/path/to/file.rs\"",
@@ -522,14 +490,11 @@ mod tests {
             result.data.params.get("file_path"),
             Some(&serde_json::Value::String("/path/to/file.rs".to_string()))
         );
-        // Note: "100" parsed as JSON becomes a number, but our parser stores as string
-        // when JSON parsing fails
     }
 
     #[test]
     fn test_parse_edit_tool() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&[
             "⏺ Edit",
             "  │ file_path: \"/src/main.rs\"",
@@ -549,8 +514,6 @@ mod tests {
     #[test]
     fn test_parse_inline_args_splitting() {
         let parser = ClaudeCodeToolOutputParser::new();
-
-        // Test with commas inside quoted strings
         let args = parser.parse_inline_args("Search", r#"pattern: "a,b,c", path: "/src""#);
         assert_eq!(
             args.get("pattern"),
@@ -565,7 +528,6 @@ mod tests {
     #[test]
     fn test_known_tools() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         assert!(parser.is_known_tool("Bash"));
         assert!(parser.is_known_tool("Read"));
         assert!(parser.is_known_tool("Edit"));
@@ -580,10 +542,8 @@ mod tests {
     #[test]
     fn test_output_type() {
         let parser = ClaudeCodeToolOutputParser::new();
-
         let context = make_context(&["⏺ Bash(ls)"]);
         let result = parser.parse(&context).unwrap();
-
         assert_eq!(result.output_type, "claude-tool");
     }
 
@@ -591,7 +551,6 @@ mod tests {
     fn test_parser_meta() {
         let parser = ClaudeCodeToolOutputParser::new();
         let meta = parser.meta();
-
         assert_eq!(meta.name, "claude-code-tool");
         assert_eq!(meta.priority, 92);
         assert_eq!(meta.version, "1.0.0");

@@ -5,16 +5,43 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// CLI engine type — determines which parser rules to apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CliEngine {
+    /// Anthropic Claude Code
+    #[default]
+    ClaudeCode,
+    /// Google Gemini CLI
+    Gemini,
+    /// OpenAI Codex CLI
+    Codex,
+}
+
+impl std::fmt::Display for CliEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliEngine::ClaudeCode => write!(f, "claude_code"),
+            CliEngine::Gemini => write!(f, "gemini"),
+            CliEngine::Codex => write!(f, "codex"),
+        }
+    }
+}
+
 /// Terminal state detected by state parsers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     /// Starting up, may need trust confirmation
     Starting,
     /// Idle, waiting for user input (prompt visible)
     Idle,
+    /// Slash command autocomplete menu is open (❯ / + menu items)
+    SlashMenu,
     /// Thinking/processing (esc to interrupt visible)
     Thinking,
+    /// Outputting response (no spinner, no prompt, has output blocks)
+    Responding,
     /// Running a tool
     ToolRunning,
     /// Waiting for user confirmation
@@ -28,7 +55,9 @@ impl std::fmt::Display for State {
         match self {
             State::Starting => write!(f, "starting"),
             State::Idle => write!(f, "idle"),
+            State::SlashMenu => write!(f, "slash_menu"),
             State::Thinking => write!(f, "thinking"),
+            State::Responding => write!(f, "responding"),
             State::ToolRunning => write!(f, "tool_running"),
             State::Confirming => write!(f, "confirming"),
             State::Error => write!(f, "error"),
@@ -85,6 +114,29 @@ impl ParserContext {
     /// Get joined text from last lines
     pub fn text(&self) -> String {
         self.last_lines.join("\n")
+    }
+
+    /// Get bottom N lines (for status bar detection)
+    pub fn bottom_lines(&self, n: usize) -> &[String] {
+        let start = self.last_lines.len().saturating_sub(n);
+        &self.last_lines[start..]
+    }
+
+    /// Get joined text from bottom N lines
+    pub fn bottom_text(&self, n: usize) -> String {
+        self.bottom_lines(n).join("\n")
+    }
+
+    /// Get the last N non-empty lines (for prompt detection).
+    /// Claude Code's prompt may appear in the middle of the screen with empty lines below.
+    pub fn last_non_empty_lines(&self, n: usize) -> Vec<&str> {
+        self.last_lines
+            .iter()
+            .rev()
+            .filter(|l| !l.trim().is_empty())
+            .take(n)
+            .map(|s| s.as_str())
+            .collect()
     }
 }
 
