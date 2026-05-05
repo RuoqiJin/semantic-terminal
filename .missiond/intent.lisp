@@ -23,11 +23,11 @@
 
     (function detect-claude-code-state
       :entry      "ClaudeCodeStateParser::parse(ParserContext)"
-      :core ((s1 strip-ansi-and-normalize)
-             (s2 scan-tail-lines-for-spinner-or-prompt)
-             (s3 classify-phase :phases (idle thinking tool-running confirming error completed))
-             (s4 attach-state-meta :fields (cli-engine spinner-char tool-name elapsed-secs))
-             (s5 emit StateDetectionResult))
+      :core ((step s1 strip-ansi-and-normalize)
+             (step s2 scan-tail-lines-for-spinner-or-prompt)
+             (step s3 classify-phase :phases (idle thinking tool-running confirming error completed))
+             (step s4 attach-state-meta :fields (cli-engine spinner-char tool-name elapsed-secs))
+             (step s5 emit StateDetectionResult))
       :egress     (StateDetectionResult State StateMeta PhaseHint)
       :surfaces   (rust-trait ClaudeCodeStateParser
                    napi-class StateParser
@@ -39,10 +39,10 @@
 
     (function detect-gemini-state
       :entry      "GeminiCliStateParser::parse(ParserContext)"
-      :core ((s1 strip-ansi-and-normalize)
-             (s2 match-gemini-prompt-and-spinner-set)
-             (s3 classify-phase :phases (idle thinking confirming error))
-             (s4 emit StateDetectionResult :cli-engine Gemini))
+      :core ((step s1 strip-ansi-and-normalize)
+             (step s2 match-gemini-prompt-and-spinner-set)
+             (step s3 classify-phase :phases (idle thinking confirming error))
+             (step s4 emit StateDetectionResult :cli-engine Gemini))
       :egress     (StateDetectionResult)
       :surfaces   (rust-trait GeminiCliStateParser)
       :runtime-projection
@@ -56,13 +56,13 @@
 
     (function parse-confirm-dialog
       :entry      "ClaudeCodeConfirmParser::parse(ParserContext)"
-      :core ((s1 detect-confirm-frame :markers (box-drawing question-glyph option-numbering))
-             (s2 extract-prompt-text)
-             (s3 enumerate-options :keys (digit y n esc tab))
-             (s4 classify-confirm-type :types (tool-permission edit-permission yes-no continue))
-             (s5 attach-tool-context :when tool-permission
+      :core ((step s1 detect-confirm-frame :markers (box-drawing question-glyph option-numbering))
+             (step s2 extract-prompt-text)
+             (step s3 enumerate-options :keys (digit y n esc tab))
+             (step s4 classify-confirm-type :types (tool-permission edit-permission yes-no continue))
+             (step s5 attach-tool-context :when tool-permission
                                      :fields (tool-name tool-input))
-             (s6 emit ConfirmResponse))
+             (step s6 emit ConfirmResponse))
       :egress     (ConfirmResponse ConfirmInfo ConfirmType ConfirmOption ConfirmKey ConfirmAction ToolInfo)
       :surfaces   (rust-trait ClaudeCodeConfirmParser
                    napi-class ConfirmParser)
@@ -77,11 +77,11 @@
 
     (function parse-status-line
       :entry      "ClaudeCodeStatusParser::parse(ParserContext)"
-      :core ((s1 locate-status-line :hints (spinner-prefix elapsed-suffix))
-             (s2 strip-ansi)
-             (s3 extract-fields :fields (spinner phase-verb elapsed-secs token-count interrupt-hint))
-             (s4 classify-phase :phases StatusPhase)
-             (s5 emit ClaudeCodeStatus))
+      :core ((step s1 locate-status-line :hints (spinner-prefix elapsed-suffix))
+             (step s2 strip-ansi)
+             (step s3 extract-fields :fields (spinner phase-verb elapsed-secs token-count interrupt-hint))
+             (step s4 classify-phase :phases StatusPhase)
+             (step s5 emit ClaudeCodeStatus))
       :egress     (ClaudeCodeStatus StatusPhase)
       :surfaces   (rust-trait ClaudeCodeStatusParser
                    napi-class StatusParser
@@ -91,10 +91,10 @@
 
     (function parse-terminal-title
       :entry      "ClaudeCodeTitleParser::parse(TitleParserContext)"
-      :core ((s1 read-osc-title-bytes)
-             (s2 detect-spinner-glyph :sets (BRAILLE_SPINNERS OTHER_SPINNERS))
-             (s3 extract-cwd-and-task-text)
-             (s4 emit TitleParseResult))
+      :core ((step s1 read-osc-title-bytes)
+             (step s2 detect-spinner-glyph :sets (BRAILLE_SPINNERS OTHER_SPINNERS))
+             (step s3 extract-cwd-and-task-text)
+             (step s4 emit TitleParseResult))
       :egress     (TitleParseResult ClaudeCodeTitle)
       :surfaces   (rust-trait ClaudeCodeTitleParser
                    napi-class TitleParser
@@ -107,12 +107,12 @@
 
     (function parse-tool-output
       :entry      "ClaudeCodeToolOutputParser::parse(ParserContext)"
-      :core ((s1 locate-tool-block :markers (tool-call-header bullet-arrow))
-             (s2 identify-tool-name :allow KNOWN_TOOLS)
-             (s3 extract-tool-args)
-             (s4 capture-tool-result-body :until (next-tool-or-prompt))
-             (s5 classify-tool-status :statuses ToolStatus)
-             (s6 emit ToolOutputResult))
+      :core ((step s1 locate-tool-block :markers (tool-call-header bullet-arrow))
+             (step s2 identify-tool-name :allow KNOWN_TOOLS)
+             (step s3 extract-tool-args)
+             (step s4 capture-tool-result-body :until (next-tool-or-prompt))
+             (step s5 classify-tool-status :statuses ToolStatus)
+             (step s6 emit ToolOutputResult))
       :egress     (ToolOutputResult ClaudeCodeToolOutput ToolStatus)
       :surfaces   (rust-trait ClaudeCodeToolOutputParser
                    napi-class ToolOutputParser
@@ -127,9 +127,9 @@
 
     (function build-fingerprint-registry
       :entry      "FingerprintRegistry::new(fingerprints)"
-      :core ((s1 collect-fingerprints :sources (claude_code_fingerprints provider-yaml))
-             (s2 index-by-category :categories FingerprintCategory)
-             (s3 expose-lookup-api :methods (get_by_category get_by_id all)))
+      :core ((step s1 collect-fingerprints :sources (claude_code_fingerprints provider-yaml))
+             (step s2 index-by-category :categories FingerprintCategory)
+             (step s3 expose-lookup-api :methods (get_by_category get_by_id all)))
       :egress     (FingerprintRegistry Fingerprint FingerprintCategory FingerprintType FingerprintPattern)
       :surfaces   (rust-fn default_registry registry_from claude_code_fingerprints
                                                          claude_code_fingerprints_from
@@ -137,11 +137,11 @@
 
     (function detect-fingerprints
       :entry      "FingerprintRegistry::detect(ParserContext)"
-      :core ((s1 iterate-fingerprints :short-circuit-on-required false)
-             (s2 match-pattern :kinds (Enum Regex Substring))
-             (s3 group-matches-by-category)
-             (s4 derive-hints :flags (has-spinner has-prompt has-tool-output has-confirm-dialog has-error))
-             (s5 emit FingerprintResult))
+      :core ((step s1 iterate-fingerprints :short-circuit-on-required false)
+             (step s2 match-pattern :kinds (Enum Regex Substring))
+             (step s3 group-matches-by-category)
+             (step s4 derive-hints :flags (has-spinner has-prompt has-tool-output has-confirm-dialog has-error))
+             (step s5 emit FingerprintResult))
       :egress     (FingerprintResult FingerprintMatch FingerprintHints)
       :surfaces   (napi-fn detect_fingerprints)))
 
@@ -152,18 +152,18 @@
 
     (function compile-default-patterns
       :entry      "patterns::default_compiled(CliEngine)"
-      :core ((s1 load-builtin-pattern-table :per-engine (ClaudeCode Gemini Codex))
-             (s2 compile-regex-and-enum-sets)
-             (s3 cache-as-CompiledPatterns))
+      :core ((step s1 load-builtin-pattern-table :per-engine (ClaudeCode Gemini Codex))
+             (step s2 compile-regex-and-enum-sets)
+             (step s3 cache-as-CompiledPatterns))
       :egress     (CompiledPatterns)
       :surfaces   (rust-fn default_compiled))
 
     (function load-and-hot-reload-patterns
       :entry      "PatternConfig::load_default / maybe_reload"
-      :core ((s1 resolve-yaml-search-paths)
-             (s2 parse-yaml-into-PatternConfig)
-             (s3 stat-watch-for-mtime-change)
-             (s4 swap-CompiledPatterns-atomically))
+      :core ((step s1 resolve-yaml-search-paths)
+             (step s2 parse-yaml-into-PatternConfig)
+             (step s3 stat-watch-for-mtime-change)
+             (step s4 swap-CompiledPatterns-atomically))
       :egress     (PatternConfig)
       :surfaces   (rust-fn global_patterns maybe_reload_global_patterns
                    global   GLOBAL_PATTERNS)
@@ -179,16 +179,16 @@
 
     (function expose-rust-parsers-to-node
       :entry      "crates/semantic-terminal-napi/src/lib.rs"
-      :core ((s1 wrap-rust-types-as-napi-structs
+      :core ((step s1 wrap-rust-types-as-napi-structs
                  :structs (StateResult ConfirmInfo ConfirmOption ToolInfo
                            StatusInfo TitleInfo ToolOutput
                            FingerprintMatch FingerprintHints FingerprintResult))
-             (s2 expose-parser-classes
+             (step s2 expose-parser-classes
                  :classes (StateParser ConfirmParser StatusParser TitleParser
                            ToolOutputParser Registry))
-             (s3 expose-stateless-fns
+             (step s3 expose-stateless-fns
                  :fns (detect_state detect_fingerprints))
-             (s4 build-cdylib :crate-type cdylib :features (napi4 serde-json)))
+             (step s4 build-cdylib :crate-type cdylib :features (napi4 serde-json)))
       :egress     ("semantic_terminal_napi.{darwin,linux,win32}.node")
       :surfaces   (napi-rs-2 cdylib)
       :runtime-projection
@@ -202,18 +202,18 @@
 
     (function publish-platform-bundle
       :entry      "packages/semantic-terminal/package.json"
-      :core ((s1 declare-main-package
+      :core ((step s1 declare-main-package
                  :name        "@anthropic/semantic-terminal"
                  :exports     (index.js index.mjs index.d.ts))
-             (s2 declare-platform-subpackages
+             (step s2 declare-platform-subpackages
                  :triples     (aarch64-apple-darwin x86_64-apple-darwin
                                x86_64-unknown-linux-gnu x86_64-unknown-linux-musl
                                x86_64-pc-windows-msvc)
                  :as-optional optionalDependencies)
-             (s3 platform-loader-resolves-at-runtime
+             (step s3 platform-loader-resolves-at-runtime
                  :file        "index.js"
                  :strategy    "match process.{platform,arch} → require subpkg")
-             (s4 prebuilt-node-files
+             (step s4 prebuilt-node-files
                  :location    "packages/semantic-terminal-<triple>/<name>.node"))
       :egress     ("@anthropic/semantic-terminal@x" "@anthropic/semantic-terminal-<triple>@x")
       :surfaces   (npm-registry)
@@ -229,7 +229,7 @@
 
     (function rust-unit-tests
       :entry      "cargo test -p semantic-terminal"
-      :core ((s1 enumerate-inline-test-modules
+      :core ((step s1 enumerate-inline-test-modules
                  :per-module ((state.rs       30)
                               (status.rs      18)
                               (tool.rs        16)
@@ -239,8 +239,8 @@
                               (fingerprint.rs  8)
                               (gemini_state.rs 8))
                  :total 110)
-             (s2 cover-real-pty-snippets :format "raw string literals")
-             (s3 assert-state-confirm-status-tool-and-fingerprint-shape))
+             (step s2 cover-real-pty-snippets :format "raw string literals")
+             (step s3 assert-state-confirm-status-tool-and-fingerprint-shape))
       :egress     ("110 unit tests all-pass invariant")
       :surfaces   (cargo-test)
       :runtime-projection
@@ -248,9 +248,9 @@
 
     (function node-smoke-test
       :entry      "node packages/semantic-terminal/test.js"
-      :core ((s1 require-built-addon)
-             (s2 invoke-detect_state-on-fixture-lines)
-             (s3 assert-result-shape))
+      :core ((step s1 require-built-addon)
+             (step s2 invoke-detect_state-on-fixture-lines)
+             (step s3 assert-result-shape))
       :egress     ("node test exit 0")
       :surfaces   (node-runtime)))
 
@@ -261,17 +261,17 @@
 
     (function ssot-write-discipline
       :entry      "any Claude Code task editing this project"
-      :core ((s1 forbid-formatter-runs
+      :core ((step s1 forbid-formatter-runs
                  :forbidden (cargo-fmt rustfmt))
-             (s2 forbid-package-mutation
+             (step s2 forbid-package-mutation
                  :forbidden (npm-build napi-build napi-prepublish
                              package-json-edits package-lock-edits))
-             (s3 forbid-prebuilt-artifact-touch
+             (step s3 forbid-prebuilt-artifact-touch
                  :forbidden ("packages/**/*.node"))
-             (s4 allow-only-ssot-writes
+             (step s4 allow-only-ssot-writes
                  :allowed (".missiond/intent.lisp"
                            ".missiond/intent-manifest.lisp"))
-             (s5 verify-clean-diff
+             (step s5 verify-clean-diff
                  :command "git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp"))
       :egress     ("clean .missiond-only commit")
       :surfaces   (git-discipline)
