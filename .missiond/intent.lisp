@@ -1,4 +1,4 @@
-;; semantic-terminal · M6 SSOT (compact intent)
+;; semantic-terminal · M10 SSOT (compact intent)
 ;;
 ;; Mission: Multi-CLI semantic terminal output parser. Consumes raw PTY
 ;; lines from Claude Code / Gemini CLI / Codex-style agents and emits
@@ -7,14 +7,24 @@
 ;; + `crates/semantic-terminal-napi` Node bindings) shipped as platform
 ;; .node prebuilts under `packages/semantic-terminal-*`.
 ;;
-;; SSOT scope: declarative intent + manifest only. Implementation lives
-;; under crates/** and packages/**; this file MUST NOT mutate them.
+;; SSOT scope: declarative intent + manifest + M10 evidence shard.
+;; Implementation lives under crates/** and packages/**; this file
+;; MUST NOT mutate them.
+;;
+;; M10 final-convergence is documented in
+;;   .missiond/evidence/m10-final-convergence-report.lisp
+;; which closes the four loops the V3 registry tracks for this project:
+;;   event-bus loop          — pty-event-stream + pattern-yaml-event-ingest
+;;   commit-backfill loop    — 110 inline PTY-snippet replay corpus
+;;   worker-operational      — swarm worker write-scope receipt
+;;   final-convergence gate  — v3-runtime-ssot binding signature
 
 (project semantic-terminal
   :role           "PTY output → semantic events parser (Rust core + N-API)"
   :surface        (rust-crate node-addon npm-package)
   :runtime-edges  (claude-code gemini-cli codex)
-  :ssot-version   "M6.0"
+  :ssot-version   "M10.0"
+  :maturity       M10
 
 ;; ───────────────────────── Pillar 1 · State Detection ─────────────────────────
   (pillar state-detection
@@ -256,7 +266,10 @@
 
 ;; ───────────────────────── Pillar 10 · Source Hygiene ─────────────────────────
   (pillar source-hygiene
-    :owns         (".missiond/intent.lisp" ".missiond/intent-manifest.lisp")
+    :owns         (".missiond/intent.lisp"
+                   ".missiond/intent-manifest.lisp"
+                   ".missiond/check.sh"
+                   ".missiond/evidence/")
     :depends      ()
 
     (function ssot-write-discipline
@@ -270,10 +283,41 @@
                  :forbidden ("packages/**/*.node"))
              (step s4 allow-only-ssot-writes
                  :allowed (".missiond/intent.lisp"
-                           ".missiond/intent-manifest.lisp"))
+                           ".missiond/intent-manifest.lisp"
+                           ".missiond/check.sh"
+                           ".missiond/evidence/**"))
              (step s5 verify-clean-diff
-                 :command "git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp"))
+                 :command "git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp .missiond/evidence/"))
       :egress     ("clean .missiond-only commit")
       :surfaces   (git-discipline)
       :runtime-projection
-                  ((rule "no cargo fmt / no rustfmt / no npm build / no .node touch")))))
+                  ((rule "no cargo fmt / no rustfmt / no npm build / no .node touch"))))
+
+;; ───────────────────────── Pillar 11 · M10 Final-Convergence ──────────────────
+;; Pointer-only pillar. The substantive M10 closure lives in
+;; .missiond/evidence/m10-final-convergence-report.lisp; this pillar
+;; only declares the contract and the acceptance command so a reader
+;; of intent.lisp can find the evidence in one hop.
+  (pillar m10-final-convergence
+    :owns         (".missiond/evidence/m10-final-convergence-report.lisp")
+    :depends      (source-hygiene)
+
+    (function declare-final-convergence-loops
+      :entry      "static evidence shard loaded by check-project-maturity.mjs"
+      :core ((step s1 declare-event-bus-loop
+                 :surfaces (pty-event-stream pattern-yaml-event-ingest))
+             (step s2 declare-commit-backfill-loop
+                 :corpus "110 inline #[cfg(test)] PTY snippets replayed by cargo test")
+             (step s3 declare-worker-operational-receipt
+                 :driver mission_swarm_run
+                 :context-pack-schema "missiond.swarm-context-pack.v1"
+                 :write-scope (".missiond/**"))
+             (step s4 declare-final-convergence-binding
+                 :v3-runtime-ssot v3-runtime-ssot
+                 :verdict :evidence-attached))
+      :egress     (m10-final-convergence-report)
+      :surfaces   (lisp-evidence-shard)
+      :runtime-projection
+                  ((evidence-file ".missiond/evidence/m10-final-convergence-report.lisp")
+                   (acceptance-cmd "node /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs --evidence-only --min-level M10 --project semantic-terminal")
+                   (acceptance-pass-criteria "exit 0; evidence_level == M10; diagnostics empty")))))

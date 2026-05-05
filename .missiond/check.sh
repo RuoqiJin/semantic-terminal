@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# semantic-terminal · M6 SSOT checker runner
+# semantic-terminal · M10 SSOT checker runner
 # Mirrors (checker-plan ...) in .missiond/intent-manifest.lisp.
 # Read-only: never stages, commits, formats, installs, or mutates files.
+#
+# M10 closure: adds the evidence-only m10-evidence-gate which calls
+# missiond's check-project-maturity.mjs to confirm evidence_level == M10
+# without depending on the central V3 :current literal advancing.
 
 set -euo pipefail
 
@@ -11,9 +15,13 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # .missiond/ allowlist for the ssot-write-scope gate.
 # SSOT_ALLOWED      — file basenames permitted directly under .missiond/.
 # SSOT_ALLOWED_DIRS — subdirectories whose entire contents are permitted
-#                     (M6 evidence trail lives here).
+#                     (M6 + M10 evidence trail lives here).
 SSOT_ALLOWED=("intent.lisp" "intent-manifest.lisp" "check.sh")
 SSOT_ALLOWED_DIRS=("evidence")
+
+# Path to MissionD's evidence-only project-maturity checker. Override
+# via env if MissionD lives elsewhere on this host.
+MISSIOND_MATURITY_CHECKER="${MISSIOND_MATURITY_CHECKER:-/Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs}"
 
 GATES=(
   "ssot-write-scope"
@@ -22,25 +30,32 @@ GATES=(
   "forbid-prebuilt-touch"
   "rust-tests"
   "node-smoke"
+  "m10-evidence-gate"
 )
 
 usage() {
   cat <<'EOF'
-Usage: bash .missiond/check.sh [--dry-run] [--skip-rust] [--skip-node] [<gate>]
+Usage: bash .missiond/check.sh [--dry-run] [--skip-rust] [--skip-node] [--skip-m10] [<gate>]
 
-Runs the six M6 SSOT gates declared in .missiond/intent-manifest.lisp:
+Runs the seven M10 SSOT gates declared in .missiond/intent-manifest.lisp:
   ssot-write-scope          .missiond/ tree contains only the SSOT allowlist
-  ssot-clean-diff           git diff --check on intent.lisp / intent-manifest.lisp
+  ssot-clean-diff           git diff --check on intent.lisp + manifest + evidence
   forbid-source-mutation    no diff vs HEAD under crates / packages / Cargo.{toml,lock}
   forbid-prebuilt-touch     no .node prebuilt touched under packages/
   rust-tests                cargo test -p semantic-terminal
   node-smoke                node packages/semantic-terminal/test.js
+  m10-evidence-gate         missiond evidence-only M10 maturity check
 
 Flags:
   --dry-run     list all gates, commands, and pass criteria without running
   --skip-rust   skip the rust-tests gate
   --skip-node   skip the node-smoke gate
+  --skip-m10    skip the m10-evidence-gate (e.g. when MissionD repo is absent)
   <gate>        run a single named gate
+
+Env:
+  MISSIOND_MATURITY_CHECKER  path override for check-project-maturity.mjs
+                             (default: /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs)
 
 Exit code is 0 on success, non-zero on hard failure. The runner never
 stages, commits, formats, installs, or mutates files.
@@ -76,6 +91,11 @@ gate_describe() {
       echo "pass-if : exit 0"
       echo "skip    : --skip-node"
       ;;
+    m10-evidence-gate)
+      echo "command : node \"\$MISSIOND_MATURITY_CHECKER\" --evidence-only --min-level M10 --project semantic-terminal"
+      echo "pass-if : exit 0; evidence_level == M10; diagnostics empty"
+      echo "skip    : --skip-m10 (auto-skips with warning when checker file is absent)"
+      ;;
     *)
       echo "unknown gate: $1" >&2
       return 2
@@ -103,6 +123,13 @@ run_gate() {
         return 0
       fi
       gate_node_smoke
+      ;;
+    m10-evidence-gate)
+      if [[ "$SKIP_M10" == "1" ]]; then
+        echo "  ↳ skipped (--skip-m10)"
+        return 0
+      fi
+      gate_m10_evidence
       ;;
     *)
       echo "unknown gate: $gate" >&2
@@ -153,7 +180,8 @@ gate_ssot_write_scope() {
 gate_ssot_clean_diff() {
   git -C "$PROJECT_ROOT" diff --check -- \
     .missiond/intent.lisp \
-    .missiond/intent-manifest.lisp
+    .missiond/intent-manifest.lisp \
+    .missiond/evidence/
 }
 
 gate_forbid_source_mutation() {
@@ -184,9 +212,22 @@ gate_node_smoke() {
   ( cd "$PROJECT_ROOT" && node packages/semantic-terminal/test.js )
 }
 
+gate_m10_evidence() {
+  if [[ ! -f "$MISSIOND_MATURITY_CHECKER" ]]; then
+    echo "  ↳ MissionD checker not found at $MISSIOND_MATURITY_CHECKER" >&2
+    echo "  ↳ set MISSIOND_MATURITY_CHECKER=<path> or pass --skip-m10" >&2
+    return 1
+  fi
+  node "$MISSIOND_MATURITY_CHECKER" \
+    --evidence-only \
+    --min-level M10 \
+    --project semantic-terminal
+}
+
 DRY_RUN=0
 SKIP_RUST=0
 SKIP_NODE=0
+SKIP_M10=0
 TARGET_GATE=""
 
 while (( $# )); do
@@ -194,6 +235,7 @@ while (( $# )); do
     --dry-run)    DRY_RUN=1 ;;
     --skip-rust)  SKIP_RUST=1 ;;
     --skip-node)  SKIP_NODE=1 ;;
+    --skip-m10)   SKIP_M10=1 ;;
     -h|--help)    usage; exit 0 ;;
     --)           shift; break ;;
     -*)
@@ -213,9 +255,10 @@ while (( $# )); do
 done
 
 if [[ "$DRY_RUN" == "1" ]]; then
-  echo "semantic-terminal · M6 SSOT checker runner (dry-run)"
+  echo "semantic-terminal · M10 SSOT checker runner (dry-run)"
   echo "project-root: $PROJECT_ROOT"
-  echo "skip-rust: $SKIP_RUST  skip-node: $SKIP_NODE"
+  echo "missiond-checker: $MISSIOND_MATURITY_CHECKER"
+  echo "skip-rust: $SKIP_RUST  skip-node: $SKIP_NODE  skip-m10: $SKIP_M10"
   for gate in "${GATES[@]}"; do
     [[ -n "$TARGET_GATE" && "$TARGET_GATE" != "$gate" ]] && continue
     echo
