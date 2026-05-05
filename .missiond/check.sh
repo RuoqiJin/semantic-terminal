@@ -9,7 +9,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # .missiond/ allowlist for the ssot-write-scope gate.
+# SSOT_ALLOWED      — file basenames permitted directly under .missiond/.
+# SSOT_ALLOWED_DIRS — subdirectories whose entire contents are permitted
+#                     (M6 evidence trail lives here).
 SSOT_ALLOWED=("intent.lisp" "intent-manifest.lisp" "check.sh")
+SSOT_ALLOWED_DIRS=("evidence")
 
 GATES=(
   "ssot-write-scope"
@@ -48,7 +52,7 @@ gate_describe() {
   case "$1" in
     ssot-write-scope)
       echo "command : git ls-files --cached --others --exclude-standard -- .missiond/"
-      echo "pass-if : every path basename is one of {${SSOT_ALLOWED[*]}}"
+      echo "pass-if : root file is one of {${SSOT_ALLOWED[*]}} or path is under .missiond/{${SSOT_ALLOWED_DIRS[*]}}/"
       ;;
     ssot-clean-diff)
       echo "command : git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp"
@@ -115,14 +119,29 @@ is_allowed_basename() {
   return 1
 }
 
+is_allowed_subdir() {
+  local name="$1" allowed
+  for allowed in "${SSOT_ALLOWED_DIRS[@]}"; do
+    [[ "$name" == "$allowed" ]] && return 0
+  done
+  return 1
+}
+
 gate_ssot_write_scope() {
-  local listing path base unexpected=()
+  local listing path rel top unexpected=()
   listing="$(git -C "$PROJECT_ROOT" ls-files --cached --others --exclude-standard -- .missiond/)"
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
-    base="${path##*/}"
-    if ! is_allowed_basename "$base"; then
-      unexpected+=("$path")
+    rel="${path#.missiond/}"
+    if [[ "$rel" == */* ]]; then
+      top="${rel%%/*}"
+      if ! is_allowed_subdir "$top"; then
+        unexpected+=("$path")
+      fi
+    else
+      if ! is_allowed_basename "$rel"; then
+        unexpected+=("$path")
+      fi
     fi
   done <<< "$listing"
   if (( ${#unexpected[@]} > 0 )); then

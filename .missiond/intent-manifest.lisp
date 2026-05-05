@@ -85,8 +85,8 @@
 ;; ───────── Checker Plan ─────────
   (checker-plan
     (gate ssot-write-scope
-      :command "git status --short -- .missiond/"
-      :pass-if "only intent.lisp / intent-manifest.lisp under .missiond/"
+      :command "git ls-files --cached --others --exclude-standard -- .missiond/"
+      :pass-if "root files limited to {intent.lisp, intent-manifest.lisp, check.sh}; subdirectories limited to {evidence/}"
       :runs-on (pre-commit ci))
     (gate ssot-clean-diff
       :command "git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp"
@@ -171,7 +171,8 @@
 
 ;; ───────── SSOT Closure ─────────
   (closure
-    :write-scope-allowlist (".missiond/intent.lisp" ".missiond/intent-manifest.lisp")
+    :write-scope-allowlist (".missiond/intent.lisp" ".missiond/intent-manifest.lisp"
+                            ".missiond/check.sh" ".missiond/evidence/**")
     :write-scope-denylist  ("crates/**" "packages/**" "Cargo.toml" "Cargo.lock"
                             "packages/**/*.node" "**/package-lock.json" "**/package.json")
     :commit-message        "feat(semantic-terminal): add M6 SSOT"))
