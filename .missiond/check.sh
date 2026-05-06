@@ -16,7 +16,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # SSOT_ALLOWED      — file basenames permitted directly under .missiond/.
 # SSOT_ALLOWED_DIRS — subdirectories whose entire contents are permitted
 #                     (M6 + M10 evidence trail lives here).
-SSOT_ALLOWED=("intent.lisp" "intent-manifest.lisp" "check.sh")
+SSOT_ALLOWED=("intent.lisp" "intent-manifest.lisp" "semantic-terminal-blueprint.lisp" "check.sh")
 SSOT_ALLOWED_DIRS=("evidence")
 
 # Path to MissionD's evidence-only project-maturity checker. Override

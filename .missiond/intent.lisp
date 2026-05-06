@@ -1,4 +1,4 @@
-;; semantic-terminal · M10 SSOT (compact intent)
+;; semantic-terminal · M6 SSOT (compact intent)
 ;;
 ;; Mission: Multi-CLI semantic terminal output parser. Consumes raw PTY
 ;; lines from Claude Code / Gemini CLI / Codex-style agents and emits
@@ -7,24 +7,33 @@
 ;; + `crates/semantic-terminal-napi` Node bindings) shipped as platform
 ;; .node prebuilts under `packages/semantic-terminal-*`.
 ;;
-;; SSOT scope: declarative intent + manifest + M10 evidence shard.
+;; SSOT scope: declarative intent + manifest + project blueprint shard
+;; (.missiond/semantic-terminal-blueprint.lisp) + evidence trail.
 ;; Implementation lives under crates/** and packages/**; this file
 ;; MUST NOT mutate them.
 ;;
-;; M10 final-convergence is documented in
+;; Maturity: this intent declares M6 (project blueprint + code-isomorphism
+;; + ordered steps + runtime-projection). The central V3 registry still
+;; records semantic-terminal at M2; M6 is the honest evidence floor we
+;; can defend today against missiond/scripts/check-project-maturity.mjs.
+;;
+;; M10 forward-evidence is retained read-only under
 ;;   .missiond/evidence/m10-final-convergence-report.lisp
-;; which closes the four loops the V3 registry tracks for this project:
+;; which sketches the four loops the V3 registry will eventually track:
 ;;   event-bus loop          — pty-event-stream + pattern-yaml-event-ingest
 ;;   commit-backfill loop    — 110 inline PTY-snippet replay corpus
 ;;   worker-operational      — swarm worker write-scope receipt
 ;;   final-convergence gate  — v3-runtime-ssot binding signature
+;; Those loops are not yet claimed as M10-closed by this SSOT.
 
 (project semantic-terminal
   :role           "PTY output → semantic events parser (Rust core + N-API)"
   :surface        (rust-crate node-addon npm-package)
   :runtime-edges  (claude-code gemini-cli codex)
-  :ssot-version   "M10.0"
-  :maturity       M10
+  :ssot-version   "M6.0"
+  :maturity       M6
+  :target         M10
+  :blueprint-file ".missiond/semantic-terminal-blueprint.lisp"
 
 ;; ───────────────────────── Pillar 1 · State Detection ─────────────────────────
   (pillar state-detection
@@ -284,6 +293,7 @@
              (step s4 allow-only-ssot-writes
                  :allowed (".missiond/intent.lisp"
                            ".missiond/intent-manifest.lisp"
+                           ".missiond/semantic-terminal-blueprint.lisp"
                            ".missiond/check.sh"
                            ".missiond/evidence/**"))
              (step s5 verify-clean-diff
@@ -293,31 +303,35 @@
       :runtime-projection
                   ((rule "no cargo fmt / no rustfmt / no npm build / no .node touch"))))
 
-;; ───────────────────────── Pillar 11 · M10 Final-Convergence ──────────────────
-;; Pointer-only pillar. The substantive M10 closure lives in
-;; .missiond/evidence/m10-final-convergence-report.lisp; this pillar
-;; only declares the contract and the acceptance command so a reader
-;; of intent.lisp can find the evidence in one hop.
-  (pillar m10-final-convergence
+;; ───────────────────────── Pillar 11 · M10 Forward Evidence ───────────────────
+;; Pointer-only pillar. This intent claims M6 today; the substantive
+;; M10 narrative is retained read-only under
+;; .missiond/evidence/m10-final-convergence-report.lisp as forward
+;; material that catalogues the four loops the V3 registry will track
+;; once the central :current literal advances. M10 closure is NOT yet
+;; asserted — the central registry still records this project at M2.
+  (pillar m10-forward-evidence
     :owns         (".missiond/evidence/m10-final-convergence-report.lisp")
     :depends      (source-hygiene)
+    :claim-status :forward-only
 
-    (function declare-final-convergence-loops
-      :entry      "static evidence shard loaded by check-project-maturity.mjs"
-      :core ((step s1 declare-event-bus-loop
+    (function catalogue-forward-loops
+      :entry      "static evidence shard read by check-project-maturity.mjs"
+      :core ((step s1 catalogue-event-bus-loop
                  :surfaces (pty-event-stream pattern-yaml-event-ingest))
-             (step s2 declare-commit-backfill-loop
+             (step s2 catalogue-commit-backfill-loop
                  :corpus "110 inline #[cfg(test)] PTY snippets replayed by cargo test")
-             (step s3 declare-worker-operational-receipt
+             (step s3 catalogue-worker-operational-receipt
                  :driver mission_swarm_run
                  :context-pack-schema "missiond.swarm-context-pack.v1"
                  :write-scope (".missiond/**"))
-             (step s4 declare-final-convergence-binding
+             (step s4 catalogue-final-convergence-binding
                  :v3-runtime-ssot v3-runtime-ssot
-                 :verdict :evidence-attached))
-      :egress     (m10-final-convergence-report)
+                 :verdict :forward-only))
+      :egress     (m10-forward-evidence-report)
       :surfaces   (lisp-evidence-shard)
       :runtime-projection
                   ((evidence-file ".missiond/evidence/m10-final-convergence-report.lisp")
-                   (acceptance-cmd "node /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs --evidence-only --min-level M10 --project semantic-terminal")
-                   (acceptance-pass-criteria "exit 0; evidence_level == M10; diagnostics empty")))))
+                   (m6-acceptance-cmd "node /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs --evidence-only --min-level M6 --project semantic-terminal")
+                   (m6-pass-criteria "exit 0; evidence_level >= M6; diagnostics empty")
+                   (m10-status "deferred — central V3 :current = M2; closure pending reducer-side bump")))))

@@ -1,12 +1,16 @@
-;; semantic-terminal · M10 SSOT Manifest
-;; Companion index for intent.lisp — shard map, maturity, evidence,
-;; checkers, package map, and unresolved gaps. Now closes the V3
-;; final-convergence loop via the M10 evidence shard.
+;; semantic-terminal · M6 SSOT Manifest
+;; Companion index for intent.lisp + semantic-terminal-blueprint.lisp —
+;; shard map, maturity, evidence, checkers, package map, and unresolved
+;; gaps. M10 forward-evidence is retained under .missiond/evidence/ as
+;; read-only forward material; this manifest only claims M6 today,
+;; mirroring the central V3 registry which still records M2.
 
 (manifest semantic-terminal
-  :ssot-version "M10.0"
-  :intent-file  ".missiond/intent.lisp"
-  :maturity     M10
+  :ssot-version   "M6.0"
+  :intent-file    ".missiond/intent.lisp"
+  :blueprint-file ".missiond/semantic-terminal-blueprint.lisp"
+  :maturity       M6
+  :target         M10
 
 ;; ───────── Shard Index ─────────
   (shard-index
@@ -19,8 +23,9 @@
     (napi-binding           :pillar 7  :loc-rust 572   :files (crates/semantic-terminal-napi/src/lib.rs))
     (npm-packaging          :pillar 8  :loc-js   ~80   :files (packages/semantic-terminal/{index.js,index.mjs,index.d.ts,package.json}))
     (test-fixtures          :pillar 9  :tests-rust 110 :files ("inline #[cfg(test)] modules" packages/semantic-terminal/test.js))
-    (source-hygiene         :pillar 10 :loc-meta-only  :files (.missiond/intent.lisp .missiond/intent-manifest.lisp .missiond/check.sh .missiond/evidence/))
-    (m10-final-convergence  :pillar 11 :loc-meta-only  :files (.missiond/evidence/m10-final-convergence-report.lisp)))
+    (source-hygiene         :pillar 10 :loc-meta-only  :files (.missiond/intent.lisp .missiond/intent-manifest.lisp .missiond/semantic-terminal-blueprint.lisp .missiond/check.sh .missiond/evidence/))
+    (m10-forward-evidence   :pillar 11 :loc-meta-only  :claim-status :forward-only
+                                                       :files (.missiond/evidence/m10-final-convergence-report.lisp)))
 
 ;; ───────── Maturity Matrix ─────────
 ;; Status legend: shipped · stable · evolving · experimental · planned
@@ -37,8 +42,11 @@
                             :note "darwin-arm64 prebuilt present; other triples published via CI")
     (test-fixtures          :status stable      :api-stable n/a :coverage 110-rust-tests)
     (source-hygiene         :status shipped     :api-stable yes :coverage policy-only)
-    (m10-final-convergence  :status shipped     :api-stable yes :coverage evidence-attached
-                            :note "evidence-only M10; central V3 :current bump is reducer-side"))
+    (m10-forward-evidence   :status forward     :api-stable n/a :coverage forward-only
+                            :note "Read-only forward material under .missiond/evidence/.
+                                   M10 is NOT claimed by this manifest; the central V3
+                                   registry still records semantic-terminal at M2 and
+                                   this SSOT honestly stamps M6.0."))
 
 ;; ───────── Evidence Map (intent → code anchors) ─────────
   (evidence-map
@@ -86,9 +94,10 @@
               "crates/semantic-terminal/src/gemini_state.rs#[cfg(test)]"))
     ((pillar test-fixtures function node-smoke-test)
      :anchors ("packages/semantic-terminal/test.js"))
-    ((pillar m10-final-convergence function declare-final-convergence-loops)
+    ((pillar m10-forward-evidence function catalogue-forward-loops)
      :anchors (".missiond/evidence/m10-final-convergence-report.lisp"
-               ".missiond/evidence/m6-convergence-report.md"))
+               ".missiond/evidence/m6-convergence-report.md")
+     :claim-status :forward-only)
     ((loop event-bus)
      :anchors (".missiond/evidence/m10-final-convergence-report.lisp::event-bus-projection"
                "crates/semantic-terminal/src/patterns.rs"        ; pattern-yaml-event-ingest producer
@@ -115,7 +124,7 @@
   (checker-plan
     (gate ssot-write-scope
       :command "git ls-files --cached --others --exclude-standard -- .missiond/"
-      :pass-if "root files limited to {intent.lisp, intent-manifest.lisp, check.sh}; subdirectories limited to {evidence/}"
+      :pass-if "root files limited to {intent.lisp, intent-manifest.lisp, semantic-terminal-blueprint.lisp, check.sh}; subdirectories limited to {evidence/}"
       :runs-on (pre-commit ci))
     (gate ssot-clean-diff
       :command "git diff --check -- .missiond/intent.lisp .missiond/intent-manifest.lisp"
@@ -137,12 +146,14 @@
       :command "node packages/semantic-terminal/test.js"
       :pass-if "exit 0"
       :runs-on (release-candidate))
-    (gate m10-evidence-gate
-      :command "node /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs --evidence-only --min-level M10 --project semantic-terminal"
-      :pass-if "exit 0; evidence_level == M10; diagnostics empty"
+    (gate m6-evidence-gate
+      :command "node /Users/jinchen/Projects/missiond/scripts/check-project-maturity.mjs --evidence-only --min-level M6 --project semantic-terminal"
+      :pass-if "exit 0; evidence_level >= M6; diagnostics empty"
       :runs-on (pre-commit ci local)
-      :note    "Evidence-only gate; does not depend on the central V3
-                :current literal advancing. Skip with --skip-m10."))
+      :note    "Evidence-only M6 gate. Project blueprint shard
+                .missiond/semantic-terminal-blueprint.lisp must exist and
+                declare :code-isomorphism current-code-mapping. Skip with
+                --skip-m6 in check.sh if the MissionD checker is absent."))
 
 ;; ───────── Package Map ─────────
   (package-map
@@ -204,33 +215,42 @@
       :pillar test-fixtures
       :note   "PTY snippets are inline raw strings; no shared fixtures/ directory for cross-engine regressions."))
 
-;; ───────── M10 Final-Convergence Loop Map ─────────
-;; Pointer-only declaration of the four loops the V3 registry tracks
-;; for this project. Substantive evidence lives in
-;; .missiond/evidence/m10-final-convergence-report.lisp.
-  (m10-loop-map
+;; ───────── M10 Forward Loop Map (read-only forward material) ─────────
+;; Pointer-only catalogue of the four loops the V3 registry will
+;; eventually track for this project. Substantive narrative lives in
+;; .missiond/evidence/m10-final-convergence-report.lisp. This manifest
+;; does NOT claim M10 closure today; the central V3 :current literal
+;; remains M2. Verdict for every loop here is :forward-only.
+  (m10-forward-loop-map
+    :claim-status :forward-only
     (loop event-bus
       :evidence-section ".missiond/evidence/m10-final-convergence-report.lisp::event-bus-projection"
       :surfaces (pty-event-stream pattern-yaml-event-ingest)
-      :missiond-bridge :planned)
+      :missiond-bridge :planned
+      :verdict :forward-only)
     (loop commit-backfill
       :evidence-section ".missiond/evidence/m10-final-convergence-report.lisp::commit-backfill-projection"
       :corpus-size 110
-      :replay-cmd "cargo test -p semantic-terminal")
+      :replay-cmd "cargo test -p semantic-terminal"
+      :verdict :forward-only)
     (loop worker-operational
       :evidence-section ".missiond/evidence/m10-final-convergence-report.lisp::worker-operational-receipt"
       :driver mission_swarm_run
       :context-pack-schema "missiond.swarm-context-pack.v1"
-      :write-scope (".missiond/**"))
+      :write-scope (".missiond/**")
+      :verdict :forward-only)
     (loop final-convergence
       :evidence-section ".missiond/evidence/m10-final-convergence-report.lisp::final-convergence-binding"
       :v3-runtime-ssot v3-runtime-ssot
-      :verdict :evidence-attached))
+      :verdict :forward-only))
 
 ;; ───────── SSOT Closure ─────────
   (closure
-    :write-scope-allowlist (".missiond/intent.lisp" ".missiond/intent-manifest.lisp"
-                            ".missiond/check.sh" ".missiond/evidence/**")
+    :write-scope-allowlist (".missiond/intent.lisp"
+                            ".missiond/intent-manifest.lisp"
+                            ".missiond/semantic-terminal-blueprint.lisp"
+                            ".missiond/check.sh"
+                            ".missiond/evidence/**")
     :write-scope-denylist  ("crates/**" "packages/**" "Cargo.toml" "Cargo.lock"
                             "packages/**/*.node" "**/package-lock.json" "**/package.json")
-    :commit-message        "feat(semantic-terminal): close M10 final-convergence (evidence-only)"))
+    :commit-message        "feat(semantic-terminal): seed project blueprint + demote M10 prose to honest M6"))
