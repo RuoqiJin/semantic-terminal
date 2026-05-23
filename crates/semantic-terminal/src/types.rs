@@ -16,6 +16,8 @@ pub enum CliEngine {
     Gemini,
     /// OpenAI Codex CLI
     Codex,
+    /// Google Antigravity CLI (`agy`)
+    Agy,
 }
 
 impl std::fmt::Display for CliEngine {
@@ -24,6 +26,7 @@ impl std::fmt::Display for CliEngine {
             CliEngine::ClaudeCode => write!(f, "claude_code"),
             CliEngine::Gemini => write!(f, "gemini"),
             CliEngine::Codex => write!(f, "codex"),
+            CliEngine::Agy => write!(f, "agy"),
         }
     }
 }

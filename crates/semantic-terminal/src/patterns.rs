@@ -396,6 +396,7 @@ impl PatternConfig {
         for (engine, filename) in &[
             (CliEngine::ClaudeCode, "claude-code.yaml"),
             (CliEngine::Gemini, "gemini-cli.yaml"),
+            (CliEngine::Agy, "agy-cli.yaml"),
         ] {
             let path = patterns_dir.join(filename);
             if path.exists() {
@@ -437,6 +438,7 @@ impl PatternConfig {
         let engines: Vec<(CliEngine, &str)> = vec![
             (CliEngine::ClaudeCode, "claude-code.yaml"),
             (CliEngine::Gemini, "gemini-cli.yaml"),
+            (CliEngine::Agy, "agy-cli.yaml"),
         ];
 
         for (engine, filename) in engines {
@@ -491,6 +493,9 @@ static GLOBAL_PATTERNS: Lazy<Arc<RwLock<PatternConfig>>> = Lazy::new(|| {
             if let Some(compiled) = default_compiled(CliEngine::Gemini) {
                 patterns.insert(CliEngine::Gemini, Arc::new(compiled));
             }
+            if let Some(compiled) = default_compiled(CliEngine::Agy) {
+                patterns.insert(CliEngine::Agy, Arc::new(compiled));
+            }
             Arc::new(RwLock::new(PatternConfig {
                 patterns,
                 file_mtimes: HashMap::new(),
@@ -530,9 +535,39 @@ fn default_patterns_yaml(engine: CliEngine) -> String {
     match engine {
         CliEngine::ClaudeCode => DEFAULT_CLAUDE_CODE_YAML.to_string(),
         CliEngine::Gemini => DEFAULT_GEMINI_CLI_YAML.to_string(),
+        CliEngine::Agy => DEFAULT_AGY_CLI_YAML.to_string(),
         _ => String::new(),
     }
 }
+
+const DEFAULT_AGY_CLI_YAML: &str = r#"engine: agy
+schema_version: 1
+
+spinner:
+  chars: ["·", "✻", "✽", "✶", "✳", "✢", "*"]
+
+prompt:
+  input: "^[❯>]\\s*"
+  with_text: "^[❯>]\\s+\\S"
+
+states:
+  idle:
+    - "Type your message"
+    - "bypass permissions on"
+    - "Welcome back"
+  thinking:
+    - "Thinking"
+    - "Working"
+    - "esc to interrupt"
+  confirming:
+    - "approval"
+    - "allow"
+    - "confirm"
+  error:
+    - "login"
+    - "quota"
+    - "billing"
+"#;
 
 const DEFAULT_CLAUDE_CODE_YAML: &str = r#"engine: claude_code
 schema_version: 1
@@ -727,6 +762,7 @@ mod tests {
         // Should have loaded them
         assert!(config.get(CliEngine::ClaudeCode).is_some());
         assert!(config.get(CliEngine::Gemini).is_some());
+        assert!(config.get(CliEngine::Agy).is_some());
     }
 
     #[test]
@@ -737,6 +773,7 @@ mod tests {
         // Should fall back to embedded defaults
         assert!(config.get(CliEngine::ClaudeCode).is_some());
         assert!(config.get(CliEngine::Gemini).is_some());
+        assert!(config.get(CliEngine::Agy).is_some());
     }
 
     #[test]
