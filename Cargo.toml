@@ -8,7 +8,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Ricky Jin"]
+authors = ["Ruoqi Jin"]
 license = "MIT"
 repository = "https://github.com/rickyjim626/semantic-terminal"
 homepage = "https://github.com/rickyjim626/semantic-terminal"
