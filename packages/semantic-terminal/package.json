@@ -36,9 +36,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rickyjim626/semantic-terminal"
+    "url": "https://github.com/RuoqiJin/semantic-terminal"
   },
-  "homepage": "https://github.com/rickyjim626/semantic-terminal",
+  "homepage": "https://github.com/RuoqiJin/semantic-terminal",
   "engines": {
     "node": ">=18"
   },
